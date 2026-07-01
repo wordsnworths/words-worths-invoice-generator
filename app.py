@@ -19,7 +19,6 @@ st.markdown("""
 db.init_db()
 
 def main():
-    # FIX: Changed use_column_width to use_container_width to clear the warning
     st.sidebar.image("assets/logo.png", use_container_width=True)
     menu = st.sidebar.radio("Navigation", ["New Document", "History", "Customers", "Products", "Settings"])
 
@@ -44,7 +43,8 @@ def render_new_document():
     
     cust_address = ""
     cust_gst = ""
-    if customer != "Select Customer...":
+    # Fixed conditional to prevent IndexError when the database has no customers
+    if customer not in ["Select Customer...", "No Customers Found"]:
         selected_cust = cust_df[cust_df['name'] == customer].iloc[0]
         addr_parts = [selected_cust['address'], selected_cust['city'], selected_cust['state'], selected_cust['pincode']]
         cust_address = ", ".join([str(p) for p in addr_parts if pd.notna(p) and p])
@@ -84,7 +84,6 @@ def render_new_document():
 
     with col_set:
         st.markdown("**Tax, Discounts & Terms**")
-        # FIX: Changed to percentage input
         overall_discount_percent = st.number_input("Overall Additional Discount (%)", min_value=0.0, max_value=100.0, value=0.0, step=1.0)
         include_gst = st.checkbox("Include GST (18%)", value=False)
         auto_round = st.checkbox("Auto Round Off", value=True)
@@ -99,7 +98,6 @@ def render_new_document():
 
     with col_tot:
         st.markdown("**Calculation Summary**")
-        # Passing the percentage to the calculator
         totals = calc.calculate_totals(edited_df, include_gst, auto_round, overall_discount_percent)
         st.metric("Net Amount", f"₹ {totals['net_total']:.2f}")
         if include_gst: st.metric("GST Amount", f"₹ {totals['gst_total']:.2f}")
@@ -108,8 +106,8 @@ def render_new_document():
 
     st.divider()
     if st.button("Generate Document", type="primary"):
-        if customer == "Select Customer...":
-            st.error("Please select a customer.")
+        if customer in ["Select Customer...", "No Customers Found"]:
+            st.error("Please select a valid customer.")
             return
         if not selected_cols:
             st.error("Please select at least one column for the PDF.")
