@@ -45,8 +45,20 @@ def render_new_document():
     cust_gst = ""
     if customer not in ["Select Customer...", "No Customers Found"]:
         selected_cust = cust_df[cust_df['name'] == customer].iloc[0]
-        addr_parts = [selected_cust['address'], selected_cust['city'], selected_cust['state'], selected_cust['pincode']]
-        cust_address = ", ".join([str(p) for p in addr_parts if pd.notna(p) and p])
+        
+        # FIX: Cleanly format the street address and convert newlines to PDF breaks
+        street = str(selected_cust['address']).strip().replace('\n', '<br/>') if pd.notna(selected_cust['address']) else ""
+        city_state_pin = [str(p).strip() for p in [selected_cust['city'], selected_cust['state'], selected_cust['pincode']] if pd.notna(p) and str(p).strip()]
+        city_line = ", ".join(city_state_pin)
+        
+        # Combine them safely
+        if street and city_line:
+            cust_address = f"{street}<br/>{city_line}"
+        elif street:
+            cust_address = street
+        elif city_line:
+            cust_address = city_line
+            
         cust_gst = selected_cust['gst'] if pd.notna(selected_cust['gst']) else ""
 
     st.markdown("### Item Details")
@@ -139,32 +151,83 @@ def render_history():
 
 def render_customers():
     st.title("Customer Master")
-    with st.form("new_customer"):
-        col1, col2 = st.columns(2)
-        with col1:
-            name = st.text_input("Company Name *")
-            contact = st.text_input("Contact Person")
-            phone = st.text_input("Phone Number")
-            email = st.text_input("Email Address")
-            gst = st.text_input("GST Number")
-        with col2:
-            address = st.text_area("Street Address")
-            city = st.text_input("City")
-            state = st.text_input("State")
-            pincode = st.text_input("Pincode")
-
-        if st.form_submit_button("Save Customer"):
-            if not name:
-                st.error("Company Name is required.")
-            else:
-                conn = db.get_connection()
-                conn.execute('''INSERT INTO customers 
-                              (name, contact, address, city, state, pincode, phone, email, gst) 
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                             (name, contact, address, city, state, pincode, phone, email, gst))
-                conn.commit()
-                st.success(f"Customer {name} saved successfully!")
     
+    # --- NEW: Added Tabs for Add and Manage features ---
+    tab1, tab2 = st.tabs(["Add New Customer", "Manage Existing Customers"])
+    
+    with tab1:
+        with st.form("new_customer"):
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input("Company Name *")
+                contact = st.text_input("Contact Person")
+                phone = st.text_input("Phone Number")
+                email = st.text_input("Email Address")
+                gst = st.text_input("GST Number")
+            with col2:
+                address = st.text_area("Street Address")
+                city = st.text_input("City")
+                state = st.text_input("State")
+                pincode = st.text_input("Pincode")
+
+            if st.form_submit_button("Save Customer"):
+                if not name:
+                    st.error("Company Name is required.")
+                else:
+                    conn = db.get_connection()
+                    conn.execute('''INSERT INTO customers 
+                                  (name, contact, address, city, state, pincode, phone, email, gst) 
+                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                                 (name, contact, address, city, state, pincode, phone, email, gst))
+                    conn.commit()
+                    st.success(f"Customer {name} saved successfully!")
+                    
+    with tab2:
+        cust_df = db.load_table('customers')
+        if not cust_df.empty:
+            cust_to_edit = st.selectbox("Select Customer to Manage", cust_df['name'].tolist())
+            if cust_to_edit:
+                # Get the selected customer's existing data
+                cust_data = cust_df[cust_df['name'] == cust_to_edit].iloc[0]
+                
+                with st.form("edit_customer"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        e_name = st.text_input("Company Name *", value=cust_data['name'])
+                        e_contact = st.text_input("Contact Person", value=cust_data['contact'] if pd.notna(cust_data['contact']) else "")
+                        e_phone = st.text_input("Phone Number", value=cust_data['phone'] if pd.notna(cust_data['phone']) else "")
+                        e_email = st.text_input("Email Address", value=cust_data['email'] if pd.notna(cust_data['email']) else "")
+                        e_gst = st.text_input("GST Number", value=cust_data['gst'] if pd.notna(cust_data['gst']) else "")
+                    with col2:
+                        e_address = st.text_area("Street Address", value=cust_data['address'] if pd.notna(cust_data['address']) else "")
+                        e_city = st.text_input("City", value=cust_data['city'] if pd.notna(cust_data['city']) else "")
+                        e_state = st.text_input("State", value=cust_data['state'] if pd.notna(cust_data['state']) else "")
+                        e_pincode = st.text_input("Pincode", value=cust_data['pincode'] if pd.notna(cust_data['pincode']) else "")
+                    
+                    col_a, col_b = st.columns([1, 5])
+                    with col_a:
+                        update_btn = st.form_submit_button("Update Customer", type="primary")
+                    with col_b:
+                        delete_btn = st.form_submit_button("Delete Customer")
+                        
+                    if update_btn:
+                        if not e_name:
+                            st.error("Company Name is required.")
+                        else:
+                            db.update_customer(int(cust_data['id']), e_name, e_contact, e_address, e_city, e_state, e_pincode, e_phone, e_email, e_gst)
+                            st.success(f"Customer {e_name} updated successfully!")
+                            st.rerun() # Refresh the page to reflect changes instantly
+                            
+                    if delete_btn:
+                        db.delete_customer(int(cust_data['id']))
+                        st.warning(f"Customer {e_name} has been deleted.")
+                        st.rerun()
+        else:
+            st.info("No customers found in the database.")
+            
+    st.divider()
+    st.markdown("### Customer Directory")
+    # Refresh the table display from the database
     st.dataframe(db.load_table('customers'), use_container_width=True)
 
 if __name__ == "__main__":
