@@ -43,12 +43,11 @@ def render_new_document():
     
     cust_address = ""
     cust_gst = ""
-    # Fixed conditional to prevent IndexError when the database has no customers
     if customer not in ["Select Customer...", "No Customers Found"]:
         selected_cust = cust_df[cust_df['name'] == customer].iloc[0]
         addr_parts = [selected_cust['address'], selected_cust['city'], selected_cust['state'], selected_cust['pincode']]
         cust_address = ", ".join([str(p) for p in addr_parts if pd.notna(p) and p])
-        cust_gst = selected_cust['gst'] if pd.notna(selected_cust['gst']) else "Unregistered"
+        cust_gst = selected_cust['gst'] if pd.notna(selected_cust['gst']) else ""
 
     st.markdown("### Item Details")
     uploaded_file = st.file_uploader("Upload Excel/CSV", type=["xlsx", "csv"])
@@ -88,6 +87,9 @@ def render_new_document():
         include_gst = st.checkbox("Include GST (18%)", value=False)
         auto_round = st.checkbox("Auto Round Off", value=True)
         
+        default_payment_terms = "- 50% advance payment upon confirmation of order\n- Balance payment on delivery."
+        payment_terms = st.text_area("Payment Terms & Conditions", default_payment_terms, height=80)
+        
         default_terms = """1. 50% advance against order confirmation / P.O
 2. Delivery Supply is subject to availability with publishers at the time of procurement.
 3. Delivery schedules and prices quoted are indicative only and are subject to publisher stock availability and MRP market revisions.
@@ -115,7 +117,8 @@ def render_new_document():
             
         doc_data = {
             'type': doc_type, 'id': doc_num, 'date': doc_date.strftime("%d-%m-%Y"),
-            'customer': customer, 'address': cust_address, 'gst': cust_gst, 'terms': terms
+            'customer': customer, 'address': cust_address, 'gst': cust_gst, 
+            'terms': terms, 'payment_terms': payment_terms
         }
         
         pdf_df = edited_df[selected_cols]
