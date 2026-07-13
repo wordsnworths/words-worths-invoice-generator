@@ -65,3 +65,19 @@ def load_table(table_name):
     df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
     conn.close()
     return df
+
+# --- NEW: Edit & Delete Functions ---
+def update_customer(customer_id, name, contact, address, city, state, pincode, phone, email, gst):
+    conn = get_connection()
+    conn.execute('''UPDATE customers SET 
+                    name=?, contact=?, address=?, city=?, state=?, pincode=?, phone=?, email=?, gst=? 
+                    WHERE id=?''', 
+                 (name, contact, address, city, state, pincode, phone, email, gst, customer_id))
+    conn.commit()
+    conn.close()
+
+def delete_customer(customer_id):
+    conn = get_connection()
+    conn.execute("DELETE FROM customers WHERE id=?", (customer_id,))
+    conn.commit()
+    conn.close()
