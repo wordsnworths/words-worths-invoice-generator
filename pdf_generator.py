@@ -26,20 +26,36 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     
     # 1. Header & Company Info
     try:
-        logo = Image("assets/logo.png", width=120, height=50)
+        # Increased Logo Size
+        logo = Image("assets/logo.png", width=180, height=75)
     except:
         logo = Paragraph("<b>Words & Worths Books Pvt Ltd</b>", styles['Heading2'])
     
-    header_data = [
-        [logo, Paragraph(f"<b>{doc_data['type'].upper()}</b><br/>No: {doc_data['id']}<br/>Date: {doc_data['date']}", styles['Normal'])]
-    ]
-    header_table = Table(header_data, colWidths=[300, 200])
-    header_table.setStyle(TableStyle([('ALIGN', (1,0), (1,0), 'RIGHT'), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
-    elements.append(header_table)
-    elements.append(Spacer(1, 20))
+    # Formatted Company Details placed beneath the logo
+    company_details = Paragraph(
+        "<font size=9>"
+        "E-28, 2nd Avenue, Besant Nagar, Chennai - 600 090<br/>"
+        "<b>GSTIN NO :</b> 33AAACW4666P1ZS | <b>Email:</b> wordsnworths@gmail.com<br/>"
+        "<b>Ph No -</b> +91 9566 250 578 | <b>Tel:</b> 044 24468659"
+        "</font>", 
+        styles['Normal']
+    )
     
-    # 2. Customer Info
-    cust_info = f"<b>Billed To:</b><br/><b>{doc_data['customer']}</b><br/>{doc_data['address']}<br/>GSTIN: {doc_data['gst']}"
+    left_header = [logo, Spacer(1, 8), company_details]
+    right_header = Paragraph(f"<b>{doc_data['type'].upper()}</b><br/>No: {doc_data['id']}<br/>Date: {doc_data['date']}", styles['Normal'])
+    
+    header_data = [[left_header, right_header]]
+    header_table = Table(header_data, colWidths=[380, 155])
+    header_table.setStyle(TableStyle([
+        ('ALIGN', (1,0), (1,0), 'RIGHT'), 
+        ('VALIGN', (0,0), (-1,-1), 'TOP')
+    ]))
+    
+    elements.append(header_table)
+    elements.append(Spacer(1, 25))
+    
+    # 2. Customer Info (with explicitly labeled GSTIN)
+    cust_info = f"<b>Billed To:</b><br/><b>{doc_data['customer']}</b><br/>{doc_data['address']}<br/><br/><b>GSTIN:</b> {doc_data['gst']}"
     elements.append(Paragraph(cust_info, styles['Normal']))
     elements.append(Spacer(1, 20))
     
@@ -67,7 +83,7 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     elements.append(item_table)
     elements.append(Spacer(1, 20))
     
-    # 4. Totals (Detailed Breakdown)
+    # 4. Totals Breakdown
     totals_data = [
         ["Gross Amount:", f"Rs. {totals['gross_total']:.2f}"]
     ]
@@ -93,9 +109,27 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     elements.append(totals_table)
     elements.append(Spacer(1, 10))
     
-    # 5. Amount in Words & Terms
+    # 5. Amount in Words
     elements.append(Paragraph(f"<b>Amount in Words:</b> {totals['amount_words']}", styles['Normal']))
-    elements.append(Spacer(1, 30))
+    elements.append(Spacer(1, 25))
+    
+    # 6. Bank Details
+    bank_text = (
+        "<b>Bank Details:</b><br/>"
+        "Bank Name: HDFC Bank<br/>"
+        "Account No: 50200016569383<br/>"
+        "IFSC Code: HDFC0000847<br/>"
+        "Branch: Thiruvanmiyur, Chennai - 600 041<br/><br/>"
+        "<b>Gpay:</b> 9566250578"
+    )
+    elements.append(Paragraph(bank_text, styles['Normal']))
+    elements.append(Spacer(1, 15))
+    
+    # 7. Payment Terms
+    elements.append(Paragraph("<b>Payment Terms & Conditions:</b><br/>" + doc_data['payment_terms'].replace('\n', '<br/>'), styles['Normal']))
+    elements.append(Spacer(1, 10))
+    
+    # 8. Supply Guidelines / Terms
     elements.append(Paragraph("<b>Supply Guidelines / Terms:</b><br/>" + doc_data['terms'].replace('\n', '<br/>'), styles['Normal']))
     
     doc.build(elements)
