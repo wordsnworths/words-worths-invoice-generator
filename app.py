@@ -46,12 +46,10 @@ def render_new_document():
     if customer not in ["Select Customer...", "No Customers Found"]:
         selected_cust = cust_df[cust_df['name'] == customer].iloc[0]
         
-        # FIX: Cleanly format the street address and convert newlines to PDF breaks
         street = str(selected_cust['address']).strip().replace('\n', '<br/>') if pd.notna(selected_cust['address']) else ""
         city_state_pin = [str(p).strip() for p in [selected_cust['city'], selected_cust['state'], selected_cust['pincode']] if pd.notna(p) and str(p).strip()]
         city_line = ", ".join(city_state_pin)
         
-        # Combine them safely
         if street and city_line:
             cust_address = f"{street}<br/>{city_line}"
         elif street:
@@ -86,12 +84,7 @@ def render_new_document():
 
     st.divider()
 
-    col_cols, col_set, col_tot = st.columns([1.5, 1.5, 1.2])
-    
-    with col_cols:
-        st.markdown("**Print Layout Options**")
-        available_cols = edited_df.columns.tolist()
-        selected_cols = st.multiselect("Columns to include in PDF", available_cols, default=available_cols)
+    col_set, col_tot = st.columns([1.5, 1.2])
 
     with col_set:
         st.markdown("**Tax, Discounts & Terms**")
@@ -119,30 +112,72 @@ def render_new_document():
         st.caption(f"**In Words:** {totals['amount_words']}")
 
     st.divider()
-    if st.button("Generate Document", type="primary"):
-        if customer in ["Select Customer...", "No Customers Found"]:
-            st.error("Please select a valid customer.")
-            return
-        if not selected_cols:
-            st.error("Please select at least one column for the PDF.")
-            return
-            
-        doc_data = {
-            'type': doc_type, 'id': doc_num, 'date': doc_date.strftime("%d-%m-%Y"),
-            'customer': customer, 'address': cust_address, 'gst': cust_gst, 
-            'terms': terms, 'payment_terms': payment_terms
-        }
+    
+    # State Management for Generation Flow
+    if "prepare_doc" not in st.session_state:
+        st.session_state.prepare_doc = False
+
+    if not st.session_state.prepare_doc:
+        if st.button("Generate Document", type="primary"):
+            if customer in ["Select Customer...", "No Customers Found"]:
+                st.error("Please select a valid customer.")
+            else:
+                st.session_state.prepare_doc = True
+                st.rerun()
+
+    # The Column Selection "Pop-Up" Step
+    if st.session_state.prepare_doc:
+        st.markdown("### Document Options: Select Columns")
+        st.caption("Unchecking a column will remove it entirely from the final PDF.")
         
-        pdf_df = edited_df[selected_cols]
-        pdf_path = pdf.generate_pdf(doc_data, pdf_df, totals)
+        available_cols = edited_df.columns.tolist()
+        cols_to_include = []
         
-        db.save_document(doc_num, doc_type, doc_date, customer, totals['final_amount'], pdf_path)
-        if str(doc_num) == str(db.get_next_sequence(doc_type)):
-            db.increment_sequence(doc_type)
+        # Display checkboxes neatly in a grid
+        col_boxes = st.columns(4)
+        for i, col_name in enumerate(available_cols):
+            with col_boxes[i % 4]:
+                if st.checkbox(col_name, value=True, key=f"chk_{col_name}"):
+                    cols_to_include.append(col_name)
+                    
+        st.write("") 
+        btn_col1, btn_col2 = st.columns([2, 8])
+        with btn_col1:
+            proceed = st.button("Proceed to Generate", type="primary")
+        with btn_col2:
+            cancel = st.button("Cancel")
             
-        st.success(f"{doc_type} {doc_num} generated successfully!")
-        with open(pdf_path, "rb") as f:
-            st.download_button("Download PDF", f, file_name=f"{doc_type}_{doc_num}.pdf", mime="application/pdf")
+        if cancel:
+            st.session_state.prepare_doc = False
+            st.rerun()
+            
+        if proceed:
+            if not cols_to_include:
+                st.error("Please select at least one column for the document.")
+            else:
+                doc_data = {
+                    'type': doc_type, 'id': doc_num, 'date': doc_date.strftime("%d-%m-%Y"),
+                    'customer': customer, 'address': cust_address, 'gst': cust_gst, 
+                    'terms': terms, 'payment_terms': payment_terms
+                }
+                
+                pdf_df = edited_df[cols_to_include]
+                pdf_path = pdf.generate_pdf(doc_data, pdf_df, totals)
+                
+                db.save_document(doc_num, doc_type, doc_date, customer, totals['final_amount'], pdf_path)
+                if str(doc_num) == str(db.get_next_sequence(doc_type)):
+                    db.increment_sequence(doc_type)
+                    
+                st.session_state.pdf_ready_path = pdf_path
+                st.session_state.pdf_ready_name = f"{doc_type}_{doc_num}.pdf"
+                st.session_state.prepare_doc = False
+                st.rerun()
+
+    # Render Download Button if Document is Ready
+    if st.session_state.get("pdf_ready_path") and not st.session_state.prepare_doc:
+        st.success(f"Document generated successfully!")
+        with open(st.session_state.pdf_ready_path, "rb") as f:
+            st.download_button("Download PDF", f, file_name=st.session_state.pdf_ready_name, mime="application/pdf")
 
 def render_history():
     st.title("Document History")
@@ -152,7 +187,6 @@ def render_history():
 def render_customers():
     st.title("Customer Master")
     
-    # --- NEW: Added Tabs for Add and Manage features ---
     tab1, tab2 = st.tabs(["Add New Customer", "Manage Existing Customers"])
     
     with tab1:
@@ -187,7 +221,6 @@ def render_customers():
         if not cust_df.empty:
             cust_to_edit = st.selectbox("Select Customer to Manage", cust_df['name'].tolist())
             if cust_to_edit:
-                # Get the selected customer's existing data
                 cust_data = cust_df[cust_df['name'] == cust_to_edit].iloc[0]
                 
                 with st.form("edit_customer"):
@@ -216,7 +249,7 @@ def render_customers():
                         else:
                             db.update_customer(int(cust_data['id']), e_name, e_contact, e_address, e_city, e_state, e_pincode, e_phone, e_email, e_gst)
                             st.success(f"Customer {e_name} updated successfully!")
-                            st.rerun() # Refresh the page to reflect changes instantly
+                            st.rerun()
                             
                     if delete_btn:
                         db.delete_customer(int(cust_data['id']))
@@ -227,7 +260,6 @@ def render_customers():
             
     st.divider()
     st.markdown("### Customer Directory")
-    # Refresh the table display from the database
     st.dataframe(db.load_table('customers'), use_container_width=True)
 
 if __name__ == "__main__":
