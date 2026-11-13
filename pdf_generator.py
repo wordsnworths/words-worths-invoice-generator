@@ -10,7 +10,7 @@ def get_col_widths(columns, max_width=535):
     """Dynamically sizes columns to utilize 100% of the A4 width cleanly."""
     widths = []
     for col in columns:
-        col_lower = col.lower()
+        col_lower = col.lower().strip()
         if 's.no' in col_lower: widths.append(0.06)
         elif col_lower in ['title', 'item', 'book name']: widths.append(0.40)
         elif col_lower in ['qty', 'quantity']: widths.append(0.08)
@@ -88,7 +88,7 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     elements.append(Paragraph(cust_info, styles['Normal']))
     elements.append(Spacer(1, 20))
     
-    # 4. Items Table (With dynamic decimal formatting)
+    # 4. Items Table (With dynamic decimal formatting rules)
     cell_style = ParagraphStyle(name='CellStyle', parent=styles['Normal'], fontSize=9, alignment=1)
     
     table_data = [list(df.columns)] 
@@ -103,27 +103,52 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
             else:
                 val_str = str(item).strip()
                 if val_str != "":
-                    col_lower = str(col_name).lower()
+                    col_lower = str(col_name).lower().strip()
                     
-                    # FORMAT 1: Force exactly 2 decimals for the Amount column
+                    # Rule 1: Always exactly 2 decimals for Amount
                     if col_lower == 'amount':
                         try:
                             val_str = f"{float(val_str):.2f}"
                         except (ValueError, TypeError):
                             pass
                             
-                    # FORMAT 2: Completely drop decimals for S.No, Qty, Rate, Discount
-                    elif col_lower in ['s.no', 'qty', 'rate', 'discount %', 'discount', 'quantity', 'mrp']:
+                    # Rule 2: Strictly whole numbers for S.No
+                    elif col_lower == 's.no':
                         try:
                             val_str = str(int(float(val_str)))
-                        except (ValueError, TypeError, OverflowError):
+                        except (ValueError, TypeError):
                             pass
                             
-                    # FORMAT 3: Safe fallback for strings (ISBNs) that pandas incorrectly appended '.0' to
+                    # Rule 3: Whole numbers if integer, preserve meaningful decimals for Qty/Rate
+                    elif col_lower in ['qty', 'quantity', 'rate', 'mrp']:
+                        try:
+                            val = float(val_str)
+                            if val.is_integer():
+                                val_str = str(int(val))
+                            else:
+                                val_str = str(val)
+                        except (ValueError, TypeError):
+                            pass
+                            
+                    # Rule 4: Format Discount with % and drop decimals if integer
+                    elif col_lower in ['discount %', 'discount']:
+                        try:
+                            # Clean the string in case a '%' was already typed
+                            clean_val = val_str.replace('%', '')
+                            val = float(clean_val)
+                            
+                            if val.is_integer():
+                                val_str = f"{int(val)}%"
+                            else:
+                                val_str = f"{val}%"
+                        except (ValueError, TypeError):
+                            pass
+                            
+                    # Rule 5: Safe fallback for strings (e.g. ISBNs) to strip pandas '.0' artifacts
                     else:
                         if val_str.endswith(".0"):
                             try:
-                                float(val_str) 
+                                float(val_str) # Verify it is a pure number before stripping
                                 val_str = val_str[:-2]
                             except ValueError:
                                 pass
