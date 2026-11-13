@@ -8,6 +8,7 @@ import pdf_generator as pdf
 import excel_generator as excel
 import base64
 import os
+import excel_generator as excel
 
 # UI Configuration
 st.set_page_config(page_title="Words & Worths ERP", layout="wide", initial_sidebar_state="expanded")
