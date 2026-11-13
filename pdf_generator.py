@@ -24,10 +24,20 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     elements = []
     styles = getSampleStyleSheet()
     
-    # 1. Header & Company Info
+    # 1. Centered Document Heading (Top of Page)
+    title_style = ParagraphStyle(
+        name='CenteredTitle', 
+        parent=styles['Heading1'], 
+        alignment=1, # 1 = Center aligned
+        fontSize=16,
+        spaceAfter=15
+    )
+    elements.append(Paragraph(f"<b>{doc_data['type'].upper()}</b>", title_style))
+    
+    # 2. Header & Company Info
     try:
         # Increased Logo Size
-        logo = Image("assets/logo.png", width=180, height=75)
+        logo = Image("assets/logo.png", width=220, height=90)
     except:
         logo = Paragraph("<b>Words & Worths Books Pvt Ltd</b>", styles['Heading2'])
     
@@ -42,7 +52,9 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     )
     
     left_header = [logo, Spacer(1, 8), company_details]
-    right_header = Paragraph(f"<b>{doc_data['type'].upper()}</b><br/>No: {doc_data['id']}<br/>Date: {doc_data['date']}", styles['Normal'])
+    
+    # Document No and Date on the right (Heading removed from here as it is centered above)
+    right_header = Paragraph(f"<b>No:</b> {doc_data['id']}<br/><b>Date:</b> {doc_data['date']}", styles['Normal'])
     
     header_data = [[left_header, right_header]]
     header_table = Table(header_data, colWidths=[380, 155])
@@ -54,12 +66,18 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     elements.append(header_table)
     elements.append(Spacer(1, 25))
     
-    # 2. Customer Info (with explicitly labeled GSTIN)
-    cust_info = f"<b>Billed To:</b><br/><b>{doc_data['customer']}</b><br/>{doc_data['address']}<br/><br/><b>GSTIN:</b> {doc_data['gst']}"
+    # 3. Customer Info (Conditional GSTIN)
+    cust_info = f"<b>Billed To:</b><br/><b>{doc_data['customer']}</b><br/>{doc_data['address']}"
+    
+    # Only append GSTIN if it exists and is not just blank spaces
+    gst_val = str(doc_data.get('gst', '')).strip()
+    if gst_val:
+        cust_info += f"<br/><br/><b>GSTIN:</b> {gst_val}"
+        
     elements.append(Paragraph(cust_info, styles['Normal']))
     elements.append(Spacer(1, 20))
     
-    # 3. Items Table
+    # 4. Items Table
     cell_style = ParagraphStyle(name='CellStyle', parent=styles['Normal'], fontSize=9, alignment=1)
     
     table_data = [list(df.columns)] 
@@ -83,7 +101,7 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     elements.append(item_table)
     elements.append(Spacer(1, 20))
     
-    # 4. Totals Breakdown
+    # 5. Totals Breakdown
     totals_data = [
         ["Gross Amount:", f"Rs. {totals['gross_total']:.2f}"]
     ]
@@ -109,11 +127,11 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     elements.append(totals_table)
     elements.append(Spacer(1, 10))
     
-    # 5. Amount in Words
+    # 6. Amount in Words
     elements.append(Paragraph(f"<b>Amount in Words:</b> {totals['amount_words']}", styles['Normal']))
     elements.append(Spacer(1, 25))
     
-    # 6. Bank Details
+    # 7. Bank Details
     bank_text = (
         "<b>Bank Details:</b><br/>"
         "Bank Name: HDFC Bank<br/>"
@@ -125,11 +143,11 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     elements.append(Paragraph(bank_text, styles['Normal']))
     elements.append(Spacer(1, 15))
     
-    # 7. Payment Terms
+    # 8. Payment Terms
     elements.append(Paragraph("<b>Payment Terms & Conditions:</b><br/>" + doc_data['payment_terms'].replace('\n', '<br/>'), styles['Normal']))
     elements.append(Spacer(1, 10))
     
-    # 8. Supply Guidelines / Terms
+    # 9. Supply Guidelines / Terms
     elements.append(Paragraph("<b>Supply Guidelines / Terms:</b><br/>" + doc_data['terms'].replace('\n', '<br/>'), styles['Normal']))
     
     doc.build(elements)
