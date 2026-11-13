@@ -4,6 +4,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from pathlib import Path
 import html
+import pandas as pd
 
 def get_col_widths(columns, max_width=535):
     """Dynamically sizes columns to utilize 100% of the A4 width cleanly."""
@@ -87,12 +88,49 @@ def generate_pdf(doc_data, df, totals, template="Modern", filename="export.pdf")
     elements.append(Paragraph(cust_info, styles['Normal']))
     elements.append(Spacer(1, 20))
     
-    # 4. Items Table (Dynamically scaled & repeats headers automatically on multi-page)
+    # 4. Items Table (With dynamic decimal formatting)
     cell_style = ParagraphStyle(name='CellStyle', parent=styles['Normal'], fontSize=9, alignment=1)
     
     table_data = [list(df.columns)] 
     for index, row in df.iterrows():
-        table_data.append([Paragraph(html.escape(str(item)), cell_style) for item in row.values])
+        row_data = []
+        for col_name in df.columns:
+            item = row[col_name]
+            
+            # Handle NaN / Blank cells cleanly
+            if pd.isna(item):
+                val_str = ""
+            else:
+                val_str = str(item).strip()
+                if val_str != "":
+                    col_lower = str(col_name).lower()
+                    
+                    # FORMAT 1: Force exactly 2 decimals for the Amount column
+                    if col_lower == 'amount':
+                        try:
+                            val_str = f"{float(val_str):.2f}"
+                        except (ValueError, TypeError):
+                            pass
+                            
+                    # FORMAT 2: Completely drop decimals for S.No, Qty, Rate, Discount
+                    elif col_lower in ['s.no', 'qty', 'rate', 'discount %', 'discount', 'quantity', 'mrp']:
+                        try:
+                            val_str = str(int(float(val_str)))
+                        except (ValueError, TypeError, OverflowError):
+                            pass
+                            
+                    # FORMAT 3: Safe fallback for strings (ISBNs) that pandas incorrectly appended '.0' to
+                    else:
+                        if val_str.endswith(".0"):
+                            try:
+                                float(val_str) 
+                                val_str = val_str[:-2]
+                            except ValueError:
+                                pass
+            
+            row_data.append(Paragraph(html.escape(val_str), cell_style))
+            
+        table_data.append(row_data)
         
     colWidths = get_col_widths(df.columns)
     item_table = Table(table_data, repeatRows=1, colWidths=colWidths)
