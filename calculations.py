@@ -1,7 +1,10 @@
 import pandas as pd
 from num2words import num2words
 
-def calculate_totals(df, include_gst=False, auto_round=True, overall_discount_percent=0.0):
+def calculate_totals(original_df, include_gst=False, auto_round=True, overall_discount_percent=0.0):
+    # Process on a copy so we don't accidentally display internal math columns in the UI/PDF
+    df = original_df.copy()
+    
     if df.empty or 'Qty' not in df.columns or 'Rate' not in df.columns:
         return {
             'total_qty': 0, 'gross_total': 0, 'discount_total': 0,
