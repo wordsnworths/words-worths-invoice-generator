@@ -5,6 +5,7 @@ import database as db
 import calculations as calc
 import excel_importer as xl
 import pdf_generator as pdf
+import excel_generator as excel
 import base64
 import os
 
@@ -52,21 +53,15 @@ def main():
         render_customers()
 
 def render_new_document_workflow():
-    if st.session_state.step == 1:
-        step_1_data_entry()
-    elif st.session_state.step == 2:
-        step_2_column_selection()
-    elif st.session_state.step == 3:
-        step_3_additional_sections()
-    elif st.session_state.step == 4:
-        step_4_preview_and_confirm()
+    if st.session_state.step == 1: step_1_data_entry()
+    elif st.session_state.step == 2: step_2_column_selection()
+    elif st.session_state.step == 3: step_3_additional_sections()
+    elif st.session_state.step == 4: step_4_preview_and_confirm()
 
 def step_1_data_entry():
     st.title("Create New Document (Step 1 of 4)")
-    
     col1, col2, col3 = st.columns(3)
     
-    # Document Type directly updates sequence default dynamically
     doc_type = col1.selectbox("Document Type", ["Invoice", "Proforma", "Quotation"], 
                               index=["Invoice", "Proforma", "Quotation"].index(st.session_state.doc_type))
     
@@ -92,7 +87,6 @@ def step_1_data_entry():
         if street and city_line: cust_address = f"{street}\n{city_line}"
         elif street: cust_address = street
         elif city_line: cust_address = city_line
-            
         cust_gst = selected_cust['gst'] if pd.notna(selected_cust['gst']) else ""
 
     st.markdown("### Item Details")
@@ -111,7 +105,6 @@ def step_1_data_entry():
         hide_index=True
     )
 
-    # Compute live amount purely for data presentation
     temp_qty = pd.to_numeric(edited_df['Qty'], errors='coerce').fillna(0)
     temp_rate = pd.to_numeric(edited_df['Rate'], errors='coerce').fillna(0)
     temp_disc = pd.to_numeric(edited_df.get('Discount %', 0), errors='coerce').fillna(0)
@@ -125,7 +118,6 @@ def step_1_data_entry():
         overall_discount = st.number_input("Overall Additional Discount (%)", min_value=0.0, max_value=100.0, value=st.session_state.overall_discount, step=1.0)
         include_gst = st.checkbox("Include GST (18%)", value=st.session_state.include_gst)
         auto_round = st.checkbox("Auto Round Off", value=st.session_state.auto_round)
-        
         payment_terms = st.text_area("Payment Terms & Conditions", st.session_state.payment_terms, height=80)
         supply_terms = st.text_area("Supply Guidelines / Terms", st.session_state.supply_terms, height=180)
 
@@ -154,17 +146,16 @@ def step_1_data_entry():
             st.session_state.auto_round = auto_round
             st.session_state.payment_terms = payment_terms
             st.session_state.supply_terms = supply_terms
-            
             st.session_state.step = 2
             st.rerun()
 
 def step_2_column_selection():
     st.title("Select Table Columns (Step 2 of 4)")
-    st.write("Check the columns you want to display on the generated PDF.")
+    st.write("Check the columns you want to display on the generated PDF/Excel document.")
     
     available_cols = st.session_state.working_df.columns.tolist()
-    
     col_a, col_b = st.columns([1, 10])
+    
     if col_a.button("Select All"):
         for c in available_cols: st.session_state[f"col_chk_{c}"] = True
         st.rerun()
@@ -177,13 +168,10 @@ def step_2_column_selection():
     selected_cols = []
     
     for i, col_name in enumerate(available_cols):
-        # Exclude internal risk columns from selection naturally
         if col_name in ['Gross Amount', 'Row Discount']: continue
-            
         with grid[i % 4]:
             is_checked = st.checkbox(col_name, value=st.session_state.get(f"col_chk_{col_name}", True), key=f"col_chk_{col_name}")
-            if is_checked:
-                selected_cols.append(col_name)
+            if is_checked: selected_cols.append(col_name)
 
     st.divider()
     b1, b2, _ = st.columns([2, 2, 8])
@@ -220,10 +208,9 @@ def step_3_additional_sections():
             st.rerun()
 
 def step_4_preview_and_confirm():
-    st.title("Document Preview (Step 4 of 4)")
-    st.info("Review the document below. The sequence number has NOT been incremented yet.")
+    st.title("Document Preview & Download (Step 4 of 4)")
+    st.info("Review the document. Select your preferred output format below. The system sequence updates only upon explicit download.")
     
-    # Generate Preview Payload
     doc_data = {
         'type': st.session_state.doc_type, 'id': st.session_state.doc_num, 
         'date': st.session_state.doc_date.strftime("%d-%m-%Y"),
@@ -234,45 +221,52 @@ def step_4_preview_and_confirm():
         'inc_supply': st.session_state.inc_supply,
         'inc_bank': st.session_state.inc_bank
     }
-    
     filtered_df = st.session_state.working_df[st.session_state.selected_cols]
+    
+    # Render Preview Stream (Always generated as PDF visually for ease of review)
     pdf_path = pdf.generate_pdf(doc_data, filtered_df, st.session_state.totals, filename="preview.pdf")
-
-    # Display Preview PDF Inline Safely
     with open(pdf_path, "rb") as f:
         pdf_bytes = f.read()
-        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+        
+    base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
     pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}#toolbar=0" width="100%" height="700" type="application/pdf"></iframe>'
     st.markdown(pdf_display, unsafe_allow_html=True)
-    
     st.divider()
-    b1, b2 = st.columns([2, 8])
+
+    # Pre-Generate Excel Bytes for Instant Download Access
+    excel_path = excel.generate_excel(doc_data, filtered_df, st.session_state.totals, filename="preview.xlsx")
+    with open(excel_path, "rb") as ef:
+        excel_bytes = ef.read()
+
+    # Form Submission Handler - Preserves Database Integrity against Double/Split-Clicking 
+    def handle_download_callback(fmt):
+        final_path = pdf_path if fmt == "PDF" else excel_path
+        db.save_document(st.session_state.doc_num, st.session_state.doc_type, st.session_state.doc_date, 
+                         st.session_state.customer, st.session_state.totals['final_amount'], final_path)
+        if str(st.session_state.doc_num) == str(db.get_next_sequence(st.session_state.doc_type)):
+            db.increment_sequence(st.session_state.doc_type)
+        st.session_state.step = 1
+
+    b1, b2, b3 = st.columns([3, 3, 4])
     with b1:
         if st.button("← Edit Selections"):
             st.session_state.step = 3
             st.rerun()
     with b2:
-        # Final confirmation callback explicitly performs DB writes
-        def confirm_generation():
-            final_name = f"{st.session_state.doc_type}_{st.session_state.doc_num}.pdf"
-            final_path = pdf.generate_pdf(doc_data, filtered_df, st.session_state.totals, filename=final_name)
-            db.save_document(st.session_state.doc_num, st.session_state.doc_type, st.session_state.doc_date, 
-                             st.session_state.customer, st.session_state.totals['final_amount'], final_path)
-            
-            if str(st.session_state.doc_num) == str(db.get_next_sequence(st.session_state.doc_type)):
-                db.increment_sequence(st.session_state.doc_type)
-            st.session_state.step = 1
-            
         st.download_button(
-            label="Confirm & Download PDF", 
-            data=pdf_bytes, 
+            label="📄 Download as PDF", data=pdf_bytes, 
             file_name=f"{st.session_state.doc_type}_{st.session_state.doc_num}.pdf", 
-            mime="application/pdf", 
-            on_click=confirm_generation, 
-            type="primary"
+            mime="application/pdf", on_click=handle_download_callback, args=("PDF",), type="primary"
+        )
+    with b3:
+        st.download_button(
+            label="📊 Download as Excel", data=excel_bytes, 
+            file_name=f"{st.session_state.doc_type}_{st.session_state.doc_num}.xlsx", 
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+            on_click=handle_download_callback, args=("Excel",), type="primary"
         )
 
-# --- Standard Auxiliary Modules Retained intact ---
+# --- Standard Modules ---
 def render_history():
     st.title("Document History")
     df = db.load_table('documents')
@@ -281,7 +275,6 @@ def render_history():
 def render_customers():
     st.title("Customer Master")
     tab1, tab2 = st.tabs(["Add New Customer", "Manage Existing Customers"])
-    
     with tab1:
         with st.form("new_customer"):
             col1, col2 = st.columns(2)
@@ -298,17 +291,13 @@ def render_customers():
                 pincode = st.text_input("Pincode")
 
             if st.form_submit_button("Save Customer"):
-                if not name:
-                    st.error("Company Name is required.")
+                if not name: st.error("Company Name is required.")
                 else:
-                    conn = db.get_connection()
-                    conn.execute('''INSERT INTO customers 
+                    db.get_connection().execute('''INSERT INTO customers 
                                   (name, contact, address, city, state, pincode, phone, email, gst) 
                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                                 (name, contact, address, city, state, pincode, phone, email, gst))
-                    conn.commit()
+                                 (name, contact, address, city, state, pincode, phone, email, gst)).connection.commit()
                     st.success(f"Customer {name} saved successfully!")
-                    
     with tab2:
         cust_df = db.load_table('customers')
         if not cust_df.empty:
@@ -330,26 +319,20 @@ def render_customers():
                         e_pincode = st.text_input("Pincode", value=cust_data['pincode'] if pd.notna(cust_data['pincode']) else "")
                     
                     col_a, col_b = st.columns([1, 5])
-                    with col_a:
-                        update_btn = st.form_submit_button("Update Customer", type="primary")
-                    with col_b:
-                        delete_btn = st.form_submit_button("Delete Customer")
+                    with col_a: update_btn = st.form_submit_button("Update Customer", type="primary")
+                    with col_b: delete_btn = st.form_submit_button("Delete Customer")
                         
                     if update_btn:
-                        if not e_name:
-                            st.error("Company Name is required.")
+                        if not e_name: st.error("Company Name is required.")
                         else:
                             db.update_customer(int(cust_data['id']), e_name, e_contact, e_address, e_city, e_state, e_pincode, e_phone, e_email, e_gst)
                             st.success(f"Customer {e_name} updated successfully!")
                             st.rerun()
-                            
                     if delete_btn:
                         db.delete_customer(int(cust_data['id']))
                         st.warning(f"Customer {e_name} has been deleted.")
                         st.rerun()
-        else:
-            st.info("No customers found in the database.")
-            
+        else: st.info("No customers found in the database.")
     st.divider()
     st.markdown("### Customer Directory")
     st.dataframe(db.load_table('customers'), use_container_width=True)
